@@ -86,6 +86,28 @@
       text-decoration: none;
       border-radius: 5px;
     }
+
+    /* Custom marker styles */
+    .start-marker {
+      background-color: #00c853;
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 4px rgba(0,0,0,0.4);
+    }
+    
+    .finish-marker {
+      background-color: #ff3d00;
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 4px rgba(0,0,0,0.4);
+    }
+    
+    .current-marker {
+      background-color: #2196f3;
+      border: 2px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 4px rgba(0,0,0,0.4);
+    }
   </style>
 </head>
 <body>
@@ -192,6 +214,9 @@
       .filter(record => record.position_lat && record.position_long)
       .map(record => [record.position_lat, record.position_long]);
     
+    // Create a variable to store the current position marker
+    let currentPositionMarker = null;
+    
     if (gpsPoints.length > 0) {
       // Create a polyline for the route
       const route = L.polyline(gpsPoints, {color: '#0066cc', weight: 5}).addTo(map);
@@ -199,12 +224,37 @@
       // Set map view to fit the route
       map.fitBounds(route.getBounds());
       
-      // Add start and finish markers
-      L.marker(gpsPoints[0], {title: 'Start'}).addTo(map)
+      // Create custom colored icons using divIcon
+      const startIcon = L.divIcon({
+        className: 'start-marker',
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+        html: ''
+      });
+      
+      const finishIcon = L.divIcon({
+        className: 'finish-marker',
+        iconSize: [14, 14],
+        iconAnchor: [7, 7],
+        html: ''
+      });
+      
+      const currentIcon = L.divIcon({
+        className: 'current-marker',
+        iconSize: [18, 18],
+        iconAnchor: [9, 9],
+        html: ''
+      });
+      
+      // Add start and finish markers with colored icons
+      L.marker(gpsPoints[0], {icon: startIcon, title: 'Start'}).addTo(map)
         .bindPopup('Start');
       
-      L.marker(gpsPoints[gpsPoints.length - 1], {title: 'Finish'}).addTo(map)
+      L.marker(gpsPoints[gpsPoints.length - 1], {icon: finishIcon, title: 'Finish'}).addTo(map)
         .bindPopup('Finish');
+        
+      // Initialize the current position marker but don't add it to the map yet
+      currentPositionMarker = L.marker([0, 0], {icon: currentIcon});
     } else {
       // If no GPS points, center map on default location
       map.setView([0, 0], 2);
@@ -219,16 +269,26 @@
       ? new Date(records[0].timestamp).getTime() 
       : null;
     
+    // Helper function to format time in HH:MM:SS
+    function formatTime(milliseconds) {
+      const totalSeconds = Math.floor(milliseconds / 1000);
+      const hours = Math.floor(totalSeconds / 3600);
+      const minutes = Math.floor((totalSeconds % 3600) / 60);
+      const seconds = totalSeconds % 60;
+      
+      return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+    
     // Prepare data for Chart.js
-    const samplingRate = 10;
+    const samplingRate = 1;
     const sampledRecords = records.filter((_, i) => i % samplingRate === 0);
     
-    // Create time labels in minutes instead of indices
+    // Create time labels in HH:MM:SS format instead of minutes
     const labels = startTime 
       ? sampledRecords.map(record => {
           const recordTime = new Date(record.timestamp).getTime();
-          // Calculate elapsed minutes from start
-          return ((recordTime - startTime) / (1000 * 60)).toFixed(1);
+          // Format elapsed time as HH:MM:SS
+          return formatTime(recordTime - startTime);
         })
       : sampledRecords.map((_, i) => i); // Fallback to indices if timestamps not available
     
@@ -284,7 +344,13 @@
           x: {
             title: {
               display: true,
-              text: 'Time (minutes)'
+              text: 'Time (hh:mm:ss)'
+            },
+            ticks: {
+              maxRotation: 45,
+              minRotation: 45,
+              autoSkip: true,
+              maxTicksLimit: 20
             }
           },
           'y-hr': {
@@ -312,6 +378,56 @@
             grid: {
               drawOnChartArea: false,
             },
+          }
+        },
+        plugins: {
+          tooltip: {
+            // Enable custom callbacks for tooltip
+            callbacks: {
+              label: function(context) {
+                return context.dataset.label + ': ' + context.formattedValue;
+              }
+            }
+          }
+        },
+        onHover: function(event, elements) {
+          if (!elements || !elements.length || !gpsPoints.length || !currentPositionMarker) return;
+          
+          // Get the index of the data point being hovered
+          const index = elements[0].index;
+          
+          // Find corresponding record in the original dataset
+          // We need to multiply by samplingRate since we sampled the data
+          const originalIndex = index * samplingRate;
+          
+          if (originalIndex < records.length) {
+            const record = records[originalIndex];
+            
+            // Only update if we have position data
+            if (record.position_lat && record.position_long) {
+              // Update current position marker
+              const position = [record.position_lat, record.position_long];
+              
+              // If marker is not on the map, add it
+              if (!map.hasLayer(currentPositionMarker)) {
+                currentPositionMarker.addTo(map);
+              }
+              
+              // Update marker position
+              currentPositionMarker.setLatLng(position);
+              
+              // Create popup content with relevant data
+              let popupContent = `Time: ${labels[index]}<br>`;
+              if (record.heart_rate) popupContent += `Heart rate: ${record.heart_rate} bpm<br>`;
+              if (record.enhanced_speed || record.speed) {
+                const speed = record.enhanced_speed !== undefined ? record.enhanced_speed : record.speed;
+                popupContent += `Speed: ${speed.toFixed(1)} km/h<br>`;
+              }
+              if (record.power) popupContent += `Power: ${record.power} W<br>`;
+              
+              // Update popup content
+              currentPositionMarker.bindPopup(popupContent).openPopup();
+            }
           }
         }
       }
