@@ -85,12 +85,12 @@ function formatPace(speedMps: number | null): string | null {
 
 export const transformFitData = (fitData: any): FitSummary => {
   // Log all top-level fields in the FIT file
-  console.log('Available FIT file fields:');
-  const fields = Object.keys(fitData);
-  console.log('Top-level fields:', fields);
+  //console.log('Available FIT file fields:');
+  //const fields = Object.keys(fitData);
+  //console.log('Top-level fields:', fields);
   
   // Log the structure of each field
-  fields.forEach(field => {
+  /**fields.forEach(field => {
     const value = fitData[field];
     const type = Array.isArray(value) ? 'array' : typeof value;
     
@@ -109,22 +109,26 @@ export const transformFitData = (fitData: any): FitSummary => {
     } else {
       console.log('Value:', value);
     }
-  });
+  });**/
   
   // Extract data from the FIT file
   const records = fitData.records || [];
   const laps = fitData.laps || [];
   const sessions = fitData.sessions || [];
   
-  // Extract sport information
+  // Extract sport information - use the name field for user-readable sport name
   let sport = null;
   let sportProfile = null;
   
-  if (fitData.sport && fitData.sport.length > 0) {
-    sport = fitData.sport[0].sport;
-    sportProfile = fitData.sport[0];
-  } else if (sessions.length > 0 && sessions[0].sport) {
-    sport = sessions[0].sport;
+  if (fitData.sports && fitData.sports.length > 0) {
+    // Prefer the name field if available
+    const sportData = fitData.sports[0];
+    sport = sportData.name || sportData.sport;
+    sportProfile = sportData;
+  } else if (sessions.length > 0) {
+    // Try to get sport name from session
+    const session = sessions[0];
+    sport = session.name || session.sport;
   }
   
   // Calculate summary metrics from sessions if available
