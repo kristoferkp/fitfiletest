@@ -85,12 +85,12 @@ function formatPace(speedMps: number | null): string | null {
 
 export const transformFitData = (fitData: any): FitSummary => {
   // Log all top-level fields in the FIT file
-  //console.log('Available FIT file fields:');
-  //const fields = Object.keys(fitData);
-  //console.log('Top-level fields:', fields);
+  console.log('Available FIT file fields:');
+  const fields = Object.keys(fitData);
+  console.log('Top-level fields:', fields);
   
   // Log the structure of each field
-  /**fields.forEach(field => {
+  fields.forEach(field => {
     const value = fitData[field];
     const type = Array.isArray(value) ? 'array' : typeof value;
     
@@ -109,7 +109,7 @@ export const transformFitData = (fitData: any): FitSummary => {
     } else {
       console.log('Value:', value);
     }
-  });**/
+  });
   
   // Extract data from the FIT file
   const records = fitData.records || [];
@@ -167,7 +167,33 @@ export const transformFitData = (fitData: any): FitSummary => {
   
   // Advanced metrics calculation
   // Extract power data from records
-  const powerData = records.map(record => record.power).filter(Boolean);
+  
+  // Extract power data from records or developer fields
+  let powerData = records.map(record => record.power).filter(Boolean);
+  
+  // If no power data found, check developer fields
+  if (powerData.length === 0) {
+    powerData = records
+      .filter((record: any) => record.developer_data_index !== undefined)
+      .map((record: any) => {
+        // Check if developer data contains power information
+        const devFields = record.developer_fields || [];
+        const powerField = devFields.find((field: any) => 
+          field.developer_data_index !== undefined && 
+          (field.field_name?.toLowerCase().includes('power') || 
+           field.native_field_num === 7) // 7 is commonly used for power in some devices
+        );
+        
+        // Also check for RP_power in record
+        if (!powerField && record.RP_power !== undefined) {
+          return record.RP_power;
+        }
+        
+        return powerField ? powerField.value : null;
+      })
+      .filter(Boolean);
+  }
+
   const normalizedPower = calculateNormalizedPower(powerData);
   
   // Calculate variability index (NP / Avg Power)
